@@ -1,10 +1,12 @@
 package main
 
 import (
+	"context"
 	"io/ioutil"
 	"net/http"
 
 	"github.com/AJackTi/go-template-fx/httphandler"
+	"go.uber.org/fx"
 	"go.uber.org/zap"
 	"gopkg.in/yaml.v2"
 )
@@ -20,7 +22,18 @@ type Config struct {
 }
 
 func main() {
-	conf := &Config{}
+	fx.New(
+		fx.Provide(ProvideConfig),
+		fx.Provide(ProvideLogger),
+		fx.Provide(http.NewServeMux),
+		fx.Invoke(httphandler.New),
+		fx.Invoke(registerHooks),
+	).Run()
+}
+
+// ProvideConfig provides the standard configuration to fx
+func ProvideConfig() *Config {
+	conf := Config{}
 	data, err := ioutil.ReadFile("config/base.yaml")
 	// handle error
 	if err != nil {
@@ -33,12 +46,30 @@ func main() {
 		panic(err)
 	}
 
+	return &conf
+}
+
+// ProvideLogger to fx
+func ProvideLogger() *zap.SugaredLogger {
 	logger, _ := zap.NewProduction()
-	defer logger.Sync()
 	slogger := logger.Sugar()
 
-	mux := http.NewServeMux()
-	httphandler.New(mux, slogger)
+	return slogger
+}
 
-	http.ListenAndServe(conf.ApplicationConfig.Address, mux)
+func registerHooks(
+	lifecycle fx.Lifecycle,
+	logger *zap.SugaredLogger, cfg *Config, mux *http.ServeMux,
+) {
+	lifecycle.Append(
+		fx.Hook{
+			OnStart: func(context.Context) error {
+				go http.ListenAndServe(cfg.ApplicationConfig.Address, mux)
+				return nil
+			},
+			OnStop: func(context.Context) error {
+				return logger.Sync()
+			},
+		},
+	)
 }
