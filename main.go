@@ -1,13 +1,38 @@
 package main
 
 import (
+	"io/ioutil"
 	"net/http"
 
 	"github.com/AJackTi/go-template-fx/httphandler"
 	"go.uber.org/zap"
+	"gopkg.in/yaml.v2"
 )
 
+// ApplicationConfig ...
+type ApplicationConfig struct {
+	Address string `yaml:"address"`
+}
+
+// Config ...
+type Config struct {
+	ApplicationConfig `yaml:"application"`
+}
+
 func main() {
+	conf := &Config{}
+	data, err := ioutil.ReadFile("config/base.yaml")
+	// handle error
+	if err != nil {
+		panic(err)
+	}
+
+	err = yaml.Unmarshal([]byte(data), &conf)
+	// handle error
+	if err != nil {
+		panic(err)
+	}
+
 	logger, _ := zap.NewProduction()
 	defer logger.Sync()
 	slogger := logger.Sugar()
@@ -15,5 +40,5 @@ func main() {
 	mux := http.NewServeMux()
 	httphandler.New(mux, slogger)
 
-	http.ListenAndServe(":8080", mux)
+	http.ListenAndServe(conf.ApplicationConfig.Address, mux)
 }
